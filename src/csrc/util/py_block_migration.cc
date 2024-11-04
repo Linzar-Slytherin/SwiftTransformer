@@ -59,7 +59,7 @@ the answer is YES, register it and note down its local address.
 Return true if the handle is registered, false otherwise.
 */
 static constexpr int64_t MAX_PARALLEL_HASH = 4096;	// Assume there are at most 64 pp stages and 64 tp stages
-static constexpr int64_t MAXENGINE=64
+static constexpr int64_t MAXENGINE=64;
 static void* context_worker_k_cache_addr[MAX_PARALLEL_HASH][MAXENGINE];
 static void* context_worker_v_cache_addr[MAX_PARALLEL_HASH][MAXENGINE];
 bool register_ipc_mem_handle(
