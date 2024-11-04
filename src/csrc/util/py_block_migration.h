@@ -18,7 +18,8 @@ bool register_ipc_mem_handle(
 	int64_t num_layers,
 	int64_t num_heads,
 	const std::vector<int64_t> &context_parallel_config,
-	const std::vector<int64_t> &decoding_parallel_config
+	const std::vector<int64_t> &decoding_parallel_config,
+	int64_t cengine_id
 );
 
 void migrate_blocks(
@@ -36,7 +37,8 @@ void migrate_blocks(
 	const std::vector<int64_t> &decoding_block_indexes,
 
 	torch::Tensor decoding_worker_k_cache,
-	torch::Tensor decoding_worker_v_cache
+	torch::Tensor decoding_worker_v_cache,
+	int64_t cengine_id
 );
 
 } // namespace st::util

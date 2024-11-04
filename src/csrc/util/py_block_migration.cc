@@ -59,15 +59,17 @@ the answer is YES, register it and note down its local address.
 Return true if the handle is registered, false otherwise.
 */
 static constexpr int64_t MAX_PARALLEL_HASH = 4096;	// Assume there are at most 64 pp stages and 64 tp stages
-static void* context_worker_k_cache_addr[MAX_PARALLEL_HASH];
-static void* context_worker_v_cache_addr[MAX_PARALLEL_HASH];
+static constexpr int64_t MAXENGINE=64
+static void* context_worker_k_cache_addr[MAX_PARALLEL_HASH][MAXENGINE];
+static void* context_worker_v_cache_addr[MAX_PARALLEL_HASH][MAXENGINE];
 bool register_ipc_mem_handle(
 	std::vector<int64_t> k_cache_handle_vec,
 	std::vector<int64_t> v_cache_handle_vec,
 	int64_t num_layers,
 	int64_t num_heads,
 	const std::vector<int64_t> &context_parallel_config,	// Generated via ParallelConfig.to_list()
-	const std::vector<int64_t> &decoding_parallel_config
+	const std::vector<int64_t> &decoding_parallel_config,
+	int64_t cengine_id
 ) {
 	// Convert the handles to cudaIpcMemHandle_t
 	const cudaIpcMemHandle_t k_cache_handle = bytes2CudaIpcMemHandle(k_cache_handle_vec);
@@ -108,14 +110,14 @@ bool register_ipc_mem_handle(
 		// On some platforms (e.g. non-nvlink platform) it's impossible to enable GPU p2p access, which 
 		// leads to error when calling cudaIpcOpenMemHandle.
 		const int64_t context_worker_hash = (context_pp_rank<<6) + context_tp_rank;
-		cudaError_t err = cudaIpcOpenMemHandle(&context_worker_k_cache_addr[context_worker_hash], k_cache_handle, cudaIpcMemLazyEnablePeerAccess);
+		cudaError_t err = cudaIpcOpenMemHandle(&context_worker_k_cache_addr[context_worker_hash][cengine_id], k_cache_handle, cudaIpcMemLazyEnablePeerAccess);
 		if (err == cudaErrorPeerAccessUnsupported) {
 			printf("Error: Peer-to-peer access is unsupported on this platform.\n");
 			printf("In the current version of distserve, it is necessary to use a platform that supports GPU P2P access.\n");
 			printf("Exiting...");
 			exit(1);
 		}
-		CUDA_CHECK(cudaIpcOpenMemHandle(&context_worker_v_cache_addr[context_worker_hash], v_cache_handle, cudaIpcMemLazyEnablePeerAccess));
+		CUDA_CHECK(cudaIpcOpenMemHandle(&context_worker_v_cache_addr[context_worker_hash][cengine_id], v_cache_handle, cudaIpcMemLazyEnablePeerAccess));
 		return true;
 	}
 }
@@ -157,7 +159,8 @@ void migrate_blocks(
 
 	// The decoding stage worker's KV cache
 	torch::Tensor decoding_worker_k_cache,	// [num_blocks, layers_per_decoding_worker, heads_per_decoding_worker, block_size, head_dim]
-	torch::Tensor decoding_worker_v_cache
+	torch::Tensor decoding_worker_v_cache,
+	int64_t cengine_id
 ) {
 	cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 	assert_whenever(decoding_worker_k_cache.is_contiguous());
@@ -217,7 +220,7 @@ void migrate_blocks(
 				const int64_t decoding_block_index = decoding_block_indexes[block_id];
 				for (int is_value = 0; is_value < 2; ++is_value) {
 					const int64_t context_worker_hash = (context_pp_rank<<6) + context_tp_rank;
-					char* context_worker_base_ptr = (char*) (is_value ? context_worker_v_cache_addr[context_worker_hash] : context_worker_k_cache_addr[context_worker_hash]);
+					char* context_worker_base_ptr = (char*) (is_value ? context_worker_v_cache_addr[context_worker_hash][cengine_id] : context_worker_k_cache_addr[context_worker_hash][cengine_id]);
 					if (!context_worker_base_ptr) {
 						// This context worker has not registered. Panic
 						fprintf(stderr, "Error: context worker %ld-%ld has not registered\n", context_pp_rank, context_tp_rank);
